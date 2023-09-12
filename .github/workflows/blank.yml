@@ -6,7 +6,7 @@ on:
       - opened
   push:
     branches:
-      - main
+      - Issue1
 
 jobs:
   assign-and-move:
