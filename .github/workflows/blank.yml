@@ -1,0 +1,72 @@
+name: Auto-Assign and Move Issue
+
+on:
+  issues:
+    types:
+      - opened
+  push:
+    branches:
+      - main
+
+jobs:
+  assign-and-move:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Assign Issue Creator
+        uses: actions/github-script@v5
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await octokit.rest.issues.addAssignees({
+              owner: ${{ github.repository_owner }},
+              repo: ${{ github.repository }},
+              issue_number: context.payload.issue.number,
+              assignees: [context.actor],
+            });
+
+      - name: Add Issue to 'DUMMY PROJECT' Project
+        uses: actions/github-script@v5
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: projects } = await octokit.rest.projects.listForRepo({
+              owner: ${{ github.repository_owner }},
+              repo: ${{ github.repository }},
+            });
+            if (projects.length > 0) {
+              const dummyProject = projects.find(project => project.name === 'DUMMY PROJECT');
+              if (dummyProject) {
+                await octokit.rest.projects.createCard({
+                  column_id: dummyProject.columns[0].id, // Assuming the first column in the project.
+                  content_id: context.payload.issue.id,
+                  content_type: 'Issue',
+                });
+              }
+            }
+
+      - name: Move Issue to 'In Progress' Column
+        uses: actions/github-script@v5
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: projects } = await octokit.rest.projects.listForRepo({
+              owner: ${{ github.repository_owner }},
+              repo: ${{ github.repository }},
+            });
+            if (projects.length > 0) {
+              const kanbanProject = projects.find(project => project.name === 'KANBAN');
+              if (kanbanProject) {
+                const columns = await octokit.rest.projects.listColumns({
+                  project_id: kanbanProject.id,
+                });
+                const inProgressColumn = columns.find(column => column.name === 'In Progress');
+                if (inProgressColumn) {
+                  await octokit.rest.projects.createCard({
+                    column_id: inProgressColumn.id,
+                    content_id: context.payload.issue.id,
+                    content_type: 'Issue',
+                  });
+                }
+              }
+            }
