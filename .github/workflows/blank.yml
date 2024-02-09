@@ -1,0 +1,67 @@
+name: Auto-Assign and Move Issue
+
+on:
+  issues:
+    types:
+      - opened
+  push:
+    branches:
+      - Issue1
+
+jobs:
+  assign-and-move:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Assign Issue Creator
+        run: |
+          ISSUE_NUMBER=$(jq -r '.issue.number' $GITHUB_EVENT_PATH)
+          ISSUE_CREATOR=$(jq -r '.issue.user.login' $GITHUB_EVENT_PATH)
+          
+          # Assign the issue creator as an assignee
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -d "{\"assignees\":[\"$ISSUE_CREATOR\"]}" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/assignees"
+
+      - name: Add Issue to 'DUMMY PROJECT' Project
+        run: |
+          PROJECTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/$GITHUB_REPOSITORY/projects")
+          PROJECT_ID=$(echo "$PROJECTS" | jq --arg name "DUMMY PROJECT" '.[] | select(.name == $name).id')
+          if [ -z "$PROJECT_ID" ]; then
+            echo "Project 'DUMMY PROJECT' not found."
+            exit 1
+          fi
+
+          COLUMNS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/projects/$PROJECT_ID/columns")
+          COLUMN_ID=$(echo "$COLUMNS" | jq '.[0].id')
+          if [ -z "$COLUMN_ID" ]; then
+            echo "No columns found in project 'DUMMY PROJECT'."
+            exit 1
+          fi
+
+          ISSUE_NUMBER=$(jq -r '.issue.number' $GITHUB_EVENT_PATH)
+          
+          # Add the issue to the 'DUMMY PROJECT' project
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -d "{\"content_id\":$ISSUE_NUMBER,\"content_type\":\"Issue\"}" \
+            "https://api.github.com/projects/columns/$COLUMN_ID/cards"
+
+      - name: Move Issue to 'In Progress' Column
+        run: |
+          # Replace 'KANBAN' and 'In Progress' with your actual project and column names
+          PROJECT_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/$GITHUB_REPOSITORY/projects" | jq --arg name "KANBAN" '.[] | select(.name == $name).id')
+          COLUMN_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/projects/$PROJECT_ID/columns" | jq --arg name "In Progress" '.[] | select(.name == $name).id')
+          if [ -z "$PROJECT_ID" ] || [ -z "$COLUMN_ID" ]; then
+            echo "Project 'KANBAN' or column 'In Progress' not found."
+            exit 1
+          fi
+
+          ISSUE_NUMBER=$(jq -r '.issue.number' $GITHUB_EVENT_PATH)
+          
+          # Move the issue to the 'In Progress' column
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -d "{\"content_id\":$ISSUE_NUMBER,\"content_type\":\"Issue\"}" \
+            "https://api.github.com/projects/columns/$COLUMN_ID/cards"
